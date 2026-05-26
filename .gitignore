@@ -11,3 +11,8 @@
 #Trash
 Trash/
 
+# figures 
+/figures
+/models
+/output
+/curvefit
