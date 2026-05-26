@@ -1,0 +1,353 @@
+---
+title: "DS_modelling"
+output: html_document
+date: "2026-05-20"
+---
+
+COMMENT: This needs to be updated with the correct condition coding - currently, it is not correct!
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("pacman")
+```
+
+
+```{r}
+pacman::p_load(tidyverse,
+               lme4,
+               emmeans,
+               DHARMa,
+               lmerTest,
+               RColorBrewer, 
+               glmmTMB)
+```
+
+```{r}
+# data
+data <- read_csv("../curvefit/clustered_data_w_linguistics.csv")
+```
+```{r}
+head(data)
+```
+
+```{r}
+data
+```
+
+
+```{r}
+# pre-processing
+# adding new variable with n clusters;
+# we also need to add a condition variable; this can be extracted with simple regex from the file names
+data <- data %>% 
+  group_by(Filename) %>% 
+  mutate(n_clusters = max(`Cluster ID`),
+         n_words = n())
+
+# reformatting condition + participant variable
+data$Condition <- as.factor(data$Condition)
+data$ID <- as.factor(data$ID)
+```
+
+Simple corr test to check if n_words and n_clusters are correlated:
+
+```{r}
+cor.test(data$n_clusters, data$n_words)
+```
+```{r}
+plot(data$n_clusters, data$n_words)
+```
+
+They are! This largely makes m2 redundant.
+
+```{r}
+plot(data$n_clusters)
+```
+Testing the curve parameters
+
+```{r}
+cor.test(data$n_words, data$curve_c)
+```
+
+# Fitting VF models
+
+```{r}
+# transforming data to a single row for each unique participant+file combination 
+data_transformed <- data %>%
+  distinct(ID, Condition, n_clusters, n_words, curve_c, curve_m)
+
+# fitting models using a poisson distribution for n_clusters
+m1 <- glmer(formula = n_clusters ~ Condition + (1|ID), 
+      data = data_transformed, family = poisson(link = "log"))
+
+m2 <- glmer(formula = n_words ~ Condition + (1|ID), 
+      data = data_transformed, family = poisson(link = "log"))
+
+# fitting models to curve_c / curve_m
+m3 <- lmer(formula = curve_c ~ Condition + (1|ID), 
+      data = data_transformed)
+
+m4 <- lmer(formula = curve_m ~ Condition + (1|ID), 
+      data = data_transformed)
+```
+
+```{r}
+summary(m1) # notice that coefficients are returned on the log scale; we need exp() to get them back to our scale
+#summary(m2)
+```
+Confidence intervals:
+```{r}
+m1_conf <- confint(m1)
+```
+```{r}
+round(m1_conf, 2)
+```
+
+
+Testing for overdispersion:
+
+```{r}
+simulationOutput <- simulateResiduals(m1)
+testDispersion(simulationOutput)
+```
+Data is underdispersed, not overdispersed. We will not change the model based on this.
+
+
+```{r}
+emm_df <- as.data.frame(emmeans(m1, ~ Condition, type = "response"))
+data_avg <- distinct(data, ID, Condition, n_clusters)
+
+plot(jitter(as.numeric(data_avg$Condition), 0.3), data_avg$n_clusters,
+     xaxt = "n", xlab = "Condition", ylab = "Number of Clusters",
+     pch = 16, col = rgb(0, 0, 0, 0.3))
+
+axis(1, at = 1:3, labels = c("1", "2", "3"))
+
+lines(as.numeric(factor(emm_df$Condition)), emm_df$rate)
+
+points(as.numeric(factor(emm_df$Condition)), emm_df$rate, pch = 16)
+
+arrows(as.numeric(factor(emm_df$Condition)), emm_df$asymp.LCL,
+       as.numeric(factor(emm_df$Condition)), emm_df$asymp.UCL,
+       angle = 90, code = 3, length = 0.05)
+```
+
+```{r}
+emm_df <- as.data.frame(emmeans(m1, ~ Condition, type = "response"))
+data_avg <- data %>%
+  distinct(ID, Condition, n_clusters) %>%
+  group_by(ID, Condition) %>%
+  summarise(n_clusters = mean(n_clusters), .groups = "drop")
+
+id_list <- unique(data_avg$ID)
+colors <- c("#E63946", "#2A9D8F", "#E9C46A", "#457B9D", "#F4A261",
+            "#6A0572", "#2D6A4F", "#F77F00", "#4361EE", "#B5179E", "#06D6A0")
+id_colors <- setNames(colors[1:length(id_list)], id_list)
+
+plot(as.numeric(data_avg$Condition), data_avg$n_clusters,
+     xaxt = "n", xlab = "Condition", ylab = "Number of Clusters",
+     type = "n",
+     main = "Number of Clusters By DBS Condition: Estimates and Data")
+axis(1, at = 1:3, labels = c("DBS Off", "DBS On - Dorsal", "DBS On - Ventral"))
+
+for (id in id_list) {
+  d <- data_avg[data_avg$ID == id, ]
+  d <- d[order(d$Condition), ]
+  lines(as.numeric(d$Condition), d$n_clusters,
+        type = "o", pch = 16,
+        col = adjustcolor(id_colors[as.character(id)], alpha.f = 0.5))
+}
+
+lines(as.numeric(factor(emm_df$Condition)), emm_df$rate, lwd = 2)
+points(as.numeric(factor(emm_df$Condition)), emm_df$rate, pch = 16)
+arrows(as.numeric(factor(emm_df$Condition)), emm_df$asymp.LCL,
+       as.numeric(factor(emm_df$Condition)), emm_df$asymp.UCL,
+       angle = 90, code = 3, length = 0.05)
+```
+
+```{r}
+# this can be used to report the results
+emm_df 
+```
+
+# Checking model 2, 3 and 4
+
+```{r}
+summary(m2)
+```
+
+
+```{r}
+summary(m3)
+```
+```{r}
+plot(y = data_transformed$curve_c, x = as.numeric(data_transformed$Condition))
+```
+Ok, so there is a huge outlier here as well. Let's identify it:
+
+```{r}
+outlier <- data_transformed %>% filter(curve_c > 150) %>% pull(Filename)
+print(outlier)
+```
+
+After looking at the curve fit plot for this file, there are no obvious problems with the fit. So no grounds for excluding it.
+
+
+```{r}
+summary(m4)
+```
+```{r}
+plot(y = data_transformed$curve_m, x = data_transformed$Condition)
+```
+Ok, so this is driven by an extreme outlier; lets look at it.
+
+```{r}
+outlier <- data_transformed %>% filter(curve_m > 100) %>% pull(Filename)
+print(outlier)
+```
+
+After inspecting the curve fit plot, the curve is clearly misspecified here; the curve is fit to a flat horizontal line, and all utterances are identified as belonging to one cluster. This can be discarded.
+
+```{r}
+data_transformed_no_outlier <- data_transformed %>% filter(!Filename==outlier)
+```
+
+Refitting model:
+
+```{r}
+m4.1 <- lmer(formula = curve_m ~ Condition + (1|ID), 
+      data = data_transformed_no_outlier)
+summary(m4.1)
+```
+```{r}
+plot(y = data_transformed_no_outlier$curve_m, x = as.numeric(data_transformed_no_outlier$Condition))
+```
+But even without this outlier, there is still no obvious effect. 
+
+# Assorted plots and statistics
+
+```{r}
+# number of clusters
+table(data_transformed$n_clusters)
+summary(data_transformed$n_clusters)
+```
+
+# Fitting linguistic models
+
+```{r}
+# first, some transformations
+data_ling <- data %>%
+  distinct(Filename, `Cluster ID`, .keep_all = TRUE)
+```
+
+
+```{r}
+plot(y = data_ling$avg_sim, x = as.numeric(data_ling$Condition),
+     main = "Avg. Semantic Similarity by DBS Condition",
+     ylab = "Semantic Similarty",
+     xlab = "Condition")
+plot(y = data_ling$avg_phon_sim, x = as.numeric(data_ling$Condition),
+     main = "Avg. Phonemic Similarity by DBS Condition",
+     ylab = "Phonemic Similarty",
+      xlab = "Condition")
+```
+```{r}
+blue <- adjustcolor("steelblue", alpha.f = 0.2)
+red  <- adjustcolor("tomato", alpha.f = 0.2)
+
+plot(y = data_ling$avg_sim,
+     x = as.numeric(data_ling$Condition) - 0.1,
+     main = "Semantic & Phonemic Similarity by DBS Condition",
+     ylab = "Similarity",
+     xlab = "Condition",
+     xaxt = "n",
+     col = blue,
+     pch = 16,
+     ylim = c(0, 1),
+     xlim = c(0.5, nlevels(data_ling$Condition) + 0.5))
+
+points(y = data_ling$avg_phon_sim,
+       x = as.numeric(data_ling$Condition) + 0.1,
+       col = red,
+       pch = 16)
+
+axis(1, at = 1:nlevels(data_ling$Condition), labels = levels(data_ling$Condition))
+
+legend("bottomleft",
+       legend = c("Semantic", "Phonemic"),
+       col = c(blue, red),
+       pch = 16,
+       cex = 0.8)
+```
+
+```{r}
+colnames(data_ling)
+```
+```{r}
+# transforming phon sim data to not hit the bounds
+data_ling_trans <- data_ling %>% 
+  mutate(avg_phon_sim = case_when(
+    avg_phon_sim == 0 ~ 0.001,        
+    avg_phon_sim == 1 ~ 0.999,         
+    TRUE ~ avg_phon_sim            
+  ))
+```
+
+```{r}
+# checking whats going on with extreme scores actually!
+data %>% filter(avg_phon_sim > 0.9)
+```
+
+```{r}
+# checking the number of rows prior to fitting
+nrow(data_ling_trans)
+```
+
+
+```{r}
+# fitting models using a poisson distribution for n_clusters
+# semantic similarity model
+m5 <- glmmTMB(formula = avg_sim ~ Condition + (1|ID), 
+      data = data_ling, family = beta_family(link = "logit"))
+
+# phonemic similarity model
+m6 <- glmmTMB(formula = avg_phon_sim ~ Condition + (1|ID), 
+      data = data_ling_trans, family = beta_family(link = "logit"))
+```
+
+```{r}
+summary(m5)
+```
+Computing confidence intervals:
+
+```{r}
+round(confint(m5, level = 0.95), 2)
+```
+```{r}
+summary(m6)
+```
+```{r}
+round(confint(m6, level = 0.95), 2)
+```
+
+
+```{r}
+# we can figure out the change in similarity like this:
+plogis(0.55390)
+plogis(0.55390 + 0.19580)
+plogis(0.55390 + 0.20602)
+
+```
+
+
+
+
+
+
+
+
+
+

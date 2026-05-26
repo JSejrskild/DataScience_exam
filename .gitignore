@@ -1,0 +1,13 @@
+# Do not push any data
+/data*
+/enhanced_data
+/VF_responses
+*.zip
+
+
+#Also the .venv
+.venv
+
+#Trash
+Trash/
+
