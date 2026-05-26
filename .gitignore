@@ -16,3 +16,7 @@ Trash/
 /models
 /output
 /curvefit
+/inter_rater*
+
+#Unused data
+*curve_fitting_test.ipynb
