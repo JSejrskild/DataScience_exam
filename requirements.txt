@@ -59,4 +59,5 @@ speechbrain==1.1.0
 #For inter-rater reliability
 Levenshtein==0.27.3
 
+#For semantic similarity
 sentence-transformers==5.5.1
