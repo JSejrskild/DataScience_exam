@@ -29,14 +29,10 @@ pacman::p_load(tidyverse,
 # data
 data <- read_csv("../curvefit/clustered_data_w_linguistics.csv")
 ```
+
 ```{r}
 head(data)
 ```
-
-```{r}
-data
-```
-
 
 ```{r}
 # pre-processing
