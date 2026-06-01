@@ -27,7 +27,7 @@ pacman::p_load(tidyverse,
 
 ```{r}
 # data
-data <- read_csv("../curvefit/clustered_data_w_linguistics.csv")
+data <- read_csv("../curvefit/clustered_data_w_condition.csv")
 ```
 
 ```{r}
@@ -89,6 +89,12 @@ m3 <- lmer(formula = curve_c ~ Condition + (1|ID),
 m4 <- lmer(formula = curve_m ~ Condition + (1|ID), 
       data = data_transformed)
 ```
+
+```{r}
+# checking n rows in transformed data
+nrow(data_transformed)
+```
+
 
 ```{r}
 summary(m1) # notice that coefficients are returned on the log scale; we need exp() to get them back to our scale
@@ -234,8 +240,12 @@ summary(data_transformed$n_clusters)
 # Fitting linguistic models
 
 ```{r}
+data_ling <- read_csv("../curvefit/clustered_data_w_linguistics.csv")
+```
+
+```{r}
 # first, some transformations
-data_ling <- data %>%
+data_ling <- data_ling %>%
   distinct(Filename, `Cluster ID`, .keep_all = TRUE)
 ```
 
@@ -294,7 +304,7 @@ data_ling_trans <- data_ling %>%
 
 ```{r}
 # checking whats going on with extreme scores actually!
-data %>% filter(avg_phon_sim > 0.9)
+data_ling %>% filter(avg_phon_sim > 0.9)
 ```
 
 ```{r}
